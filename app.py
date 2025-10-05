@@ -98,7 +98,8 @@ def home():
     else:
         current_date = now.strftime('%B %d, %Y')
         custom_date = None
-
+        
+    array_d = get_weather(city)
     # Generate forecast data
     forecast_data = get_forecast_data(latitude, longitude, custom_date)
 
