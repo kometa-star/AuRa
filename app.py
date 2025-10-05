@@ -15,6 +15,8 @@ warnings.filterwarnings('ignore')
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+PORT = int(os.environ.get('PORT', 5000))
+
 def get_forecast_data(latitude, longitude, custom_date=None):
     """Generate forecast data for given coordinates"""
     parameters = 'T2M,T2M_MIN,T2M_MAX,RH2M,WS2M,PRECTOTCORR'
@@ -253,4 +255,4 @@ def fetch_nasa_data(latitude, longitude, start, end, parameters, community):
         return pd.DataFrame()
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=PORT))
