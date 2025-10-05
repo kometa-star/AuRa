@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
+    <title>AuRa</title>
     <script src="//unpkg.com/alpinejs" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -35,7 +35,7 @@
     </div>
       </div>
       <div class="grid-rows-1 justify-evenly flex place" x-data="{ showCityInput: false }">
-        <button @click="showCityInput = !showCityInput" class=" mx-20 my-5 w-full rounded-3xl bg-amber-50 h-10 text-center font-bold text-blue-600 transition hover:bg-sky-100 drop-shadow-2xl ease-in-out hover:scale-110">📍 {{ city }}</button>
+        <button @click="showCityInput = !showCityInput" class=" mx-20 my-5 w-full rounded-3xl bg-amber-50 h-10 text-center font-bold text-blue-600 transition hover:bg-sky-100 drop-shadow-2xl ease-in-out hover:scale-110">Location: {{ city }}</button>
         <div x-show="showCityInput" @click.away="showCityInput = false" class="absolute top-32 left-1/2 transform -translate-x-1/2 bg-white p-4 rounded-lg shadow-xl z-50">
           <form method="POST" action="/update_location">
             <input type="text" name="city" placeholder="Enter city name" class="border border-gray-300 rounded px-3 py-2 mr-2" required>
@@ -44,7 +44,7 @@
         </div>
       </div>
       <div class="flex w-full grid-rows-2 font-semibold pb-5 content-center place-content-center gap-20" x-data="{ showDateInput: false }">
-        <button @click="showDateInput = !showDateInput" class="w-40 h-10 rounded-full font-semibold bg-amber-50 text-blue-500 transition hover:bg-amber-200 drop-shadow-2xl ease-in-out hover:scale-110">📅 {{ current_date }}</button>
+        <button @click="showDateInput = !showDateInput" class="w-40 h-10 rounded-full font-semibold bg-amber-50 text-blue-500 transition hover:bg-amber-200 drop-shadow-2xl ease-in-out hover:scale-110">Date: {{ current_date }}</button>
         <div x-show="showDateInput" @click.away="showDateInput = false" class="absolute top-40 left-1/2 transform -translate-x-1/2 bg-white p-4 rounded-lg shadow-xl z-50">
           <form method="POST" action="/update_date">
             <input type="date" name="date" class="border border-gray-300 rounded px-3 py-2 mr-2" required>
