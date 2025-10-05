@@ -130,7 +130,12 @@ def home():
                            avg_temps=json.dumps(avg_temps),
                            min_temps=json.dumps(min_temps),
                            max_temps=json.dumps(max_temps),
-                           condition=get_weather(city))
+                           condition=array_d[0],
+                           feelslike=array_d[1],
+                           humidity=array_d[2],
+                           wind_speed=array_d[3],
+                           temp=array_d[4],
+                           precip=array_d[5])
 
 @app.route("/update_location", methods=['POST'])
 def update_location():
@@ -196,7 +201,8 @@ def get_user_location_by_ip():
         if lat and lon:
             return float(lat), float(lon), city  # Успех
         else:
-            # Fallback: Nominatim по городу
+            # Fallback: Nominatim по гор
+            оду
             lat, lon = get_coordinates(city)
             return lat, lon, city
     except Exception as e:
@@ -209,8 +215,14 @@ def get_weather(city):
         response = requests.get(url)   
         data = response.json() 
         if 'error' not in data:
+            temp = data['current']['temp_c']
             condition = data['current']['condition']['text']
-            return condition
+            feelslike = data['current']['feelslike_c']
+            humidity = data['current']['humidity']
+            wind_speed = data['current']['wind_kph']
+            precip = data['current']['precip_mm']
+            array_data = [condition, feelslike, humidity, wind_speed, temp, precip]
+            return array_data
         else:
             return "Не удалось получить данные о погоде. Проверьте правильность названия города."
     except requests.exceptions.RequestException:
