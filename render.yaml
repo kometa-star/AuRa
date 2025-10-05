@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: flask-tailwind-app
+    env: python
+    buildCommand: |
+      npm install
+      npm run build
+      pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    buildFilter:
+      paths:
+        - "templates/**"
+        - "static/**"
+        - "input.css"
+        - "tailwind.config.js"
+        - "package.json"
+        - "app.py"
+        - "requirements.txt"
+    autoDeploy: true
