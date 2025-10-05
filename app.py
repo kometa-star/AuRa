@@ -9,7 +9,9 @@ from datetime import datetime, timedelta, date
 import requests
 import warnings
 import os
+import requests
 
+API_KEY = '5dc7fa8e3080452eb80211536250410'
 warnings.filterwarnings('ignore')
 
 app = Flask(__name__)
@@ -87,7 +89,7 @@ def home():
     # Get current time and date
     now = datetime.now()
     current_time = now.strftime('%H:%M')
-    
+
     # Check if custom date is set in session
     if 'custom_date' in session:
         custom_date = datetime.strptime(session['custom_date'], '%Y-%m-%d').date()
@@ -98,21 +100,21 @@ def home():
 
     # Generate forecast data
     forecast_data = get_forecast_data(latitude, longitude, custom_date)
-    
+
     # Prepare chart data for 7-day predictions
     chart_labels = []
     avg_temps = []
     min_temps = []
     max_temps = []
-    
+
     base_date = custom_date if custom_date else datetime.now().date()
-    
+
     # Extract data from first historical year (index 0) for all 7 days
     if len(forecast_data) > 0 and len(forecast_data[0]) >= 7:
         for day_idx in range(7):
             day_date = base_date + timedelta(days=day_idx)
             chart_labels.append(day_date.strftime('%b %d'))
-            
+
             day_data = forecast_data[0][day_idx]
             avg_temps.append(day_data[0] if isinstance(day_data[0], (int, float)) else 0)
             min_temps.append(day_data[1] if isinstance(day_data[1], (int, float)) else 0)
@@ -126,7 +128,8 @@ def home():
                            chart_labels=json.dumps(chart_labels),
                            avg_temps=json.dumps(avg_temps),
                            min_temps=json.dumps(min_temps),
-                           max_temps=json.dumps(max_temps))
+                           max_temps=json.dumps(max_temps),
+                           condition=get_weather(city))
 
 @app.route("/update_location", methods=['POST'])
 def update_location():
@@ -199,6 +202,18 @@ def get_user_location_by_ip():
         lat, lon = get_coordinates("Uralsk")
         return lat, lon, "Uralsk"
 
+def get_weather(city):
+    try:
+        url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={city}&aqi=no"
+        response = requests.get(url)   
+        data = response.json() 
+        if 'error' not in data:
+            condition = data['current']['condition']['text']
+            return condition
+        else:
+            return "Не удалось получить данные о погоде. Проверьте правильность названия города."
+    except requests.exceptions.RequestException:
+        return "Error: Cannot get the weather report"
 
 def get_sunrise_sunset(lat, lon, date_str):
     """Получение времени восхода/захода солнца для даты через Sunrise-Sunset API (UTC+5 для Uralsk)"""
