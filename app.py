@@ -1,191 +1,256 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AuRa</title>
-    <script src="//unpkg.com/alpinejs" defer></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+import urllib.request
+import urllib.parse
+import urllib.error
+import json
+import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta, date
+import requests
+import warnings
+import os
+
+warnings.filterwarnings('ignore')
+
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+def get_forecast_data(latitude, longitude, custom_date=None):
+    """Generate forecast data for given coordinates"""
+    parameters = 'T2M,T2M_MIN,T2M_MAX,RH2M,WS2M,PRECTOTCORR'
+    community = 'AG'
+
+    today = custom_date if custom_date else datetime.now().date()
+    wek = 7
+    start_today = today
+
+    historical_dfs = []
+    years_back = [5, 6, 7]
+    params_list = ['T2M', 'T2M_MIN', 'T2M_MAX', 'RH2M', 'WS2M', 'PRECTOTCORR']
+
+    for y in years_back:
+        hist_year = start_today.year - y
+        hist_start = date(hist_year, start_today.month, start_today.day)
+        hist_end = hist_start + timedelta(days=wek - 1)
+        start_str = hist_start.strftime('%Y%m%d')
+        end_str = hist_end.strftime('%Y%m%d')
+        hist_df = fetch_nasa_data(latitude, longitude, start_str, end_str, parameters, community)
+        if not hist_df.empty:
+            mask = hist_df[params_list].ne(-999.0).all(axis=1)
+            hist_df_filtered = hist_df[mask].sort_values('date')
+            if len(hist_df_filtered) == wek:
+                historical_dfs.append(hist_df_filtered[params_list].values)
+
+    extended_years_data = []
+    for i, year_array in enumerate(historical_dfs):
+        year_df = pd.DataFrame(year_array, columns=params_list)
+        year_sunrise = []
+        year_sunset = []
+        hist_year = start_today.year - years_back[i]
+        hist_dates = pd.date_range(start=date(hist_year, start_today.month, start_today.day), periods=wek, freq='D')
+        for h_date in hist_dates:
+            sr, ss = get_sunrise_sunset(latitude, longitude, h_date.strftime('%Y-%m-%d'))
+            year_sunrise.append(sr or "N/A")
+            year_sunset.append(ss or "N/A")
+        year_df['Sunrise'] = year_sunrise
+        year_df['Sunset'] = year_sunset
+        year_data_rounded = []
+        for row in year_df.values:
+            rounded_row = [round(val, 1) if isinstance(val, (int, float)) else val for val in row]
+            year_data_rounded.append(rounded_row)
+        extended_years_data.append(year_data_rounded)
+
+    while len(extended_years_data) < 3:
+        empty_year = [['N/A'] * 8 for _ in range(7)]
+        extended_years_data.append(empty_year)
+
+    return extended_years_data
+
+@app.route("/")
+def home():
+    # Get location from session or auto-detect
+    if 'city' in session and 'latitude' in session and 'longitude' in session:
+        city = session['city']
+        latitude = session['latitude']
+        longitude = session['longitude']
+    else:
+        latitude, longitude, city = get_user_location_by_ip()
+        # Validate coordinates before storing in session
+        if latitude is None or longitude is None:
+            # Fallback to default location with known coordinates
+            latitude, longitude = get_coordinates("Uralsk")
+            city = "Uralsk"
+        session['city'] = city
+        session['latitude'] = latitude
+        session['longitude'] = longitude
+
+    # Get current time and date
+    now = datetime.now()
+    current_time = now.strftime('%H:%M')
+    
+    # Check if custom date is set in session
+    if 'custom_date' in session:
+        custom_date = datetime.strptime(session['custom_date'], '%Y-%m-%d').date()
+        current_date = custom_date.strftime('%B %d, %Y')
+    else:
+        current_date = now.strftime('%B %d, %Y')
+        custom_date = None
+
+    # Generate forecast data
+    forecast_data = get_forecast_data(latitude, longitude, custom_date)
+    
+    # Prepare chart data for 7-day predictions
+    chart_labels = []
+    avg_temps = []
+    min_temps = []
+    max_temps = []
+    
+    base_date = custom_date if custom_date else datetime.now().date()
+    
+    # Extract data from first historical year (index 0) for all 7 days
+    if len(forecast_data) > 0 and len(forecast_data[0]) >= 7:
+        for day_idx in range(7):
+            day_date = base_date + timedelta(days=day_idx)
+            chart_labels.append(day_date.strftime('%b %d'))
+            
+            day_data = forecast_data[0][day_idx]
+            avg_temps.append(day_data[0] if isinstance(day_data[0], (int, float)) else 0)
+            min_temps.append(day_data[1] if isinstance(day_data[1], (int, float)) else 0)
+            max_temps.append(day_data[2] if isinstance(day_data[2], (int, float)) else 0)
+
+    return render_template("index.html",
+                           forecast_data=forecast_data,
+                           current_time=current_time,
+                           current_date=current_date,
+                           city=city,
+                           chart_labels=json.dumps(chart_labels),
+                           avg_temps=json.dumps(avg_temps),
+                           min_temps=json.dumps(min_temps),
+                           max_temps=json.dumps(max_temps))
+
+@app.route("/update_location", methods=['POST'])
+def update_location():
+    city_name = request.form.get('city')
+    if city_name:
+        lat, lon = get_coordinates(city_name)
+        if lat is not None and lon is not None:
+            session['city'] = city_name
+            session['latitude'] = lat
+            session['longitude'] = lon
+        else:
+            # Keep existing location if geocoding fails
+            pass
+    return redirect(url_for('home'))
+
+@app.route("/update_date", methods=['POST'])
+def update_date():
+    date_str = request.form.get('date')
+    if date_str:
+        session['custom_date'] = date_str
+    return redirect(url_for('home'))
 
 
-    </div>
-  </div>
-  </head>
-  <body>
-    <div class="min-h-screen w-screen bg-gradient-to-br to-yellow-200 from-blue-500 pb-10">
-      <div class=" flex h-12.5 w-full text-white font-bold sticky auto-rows-auto z-50 justify-between" alt="head title">
-        <p class="font-family: px-5 pt-2 font-serif drop-shadow-lg opacity-70 text-2xl">AuRa</p>
-        <div class="relative inline-block text-left mr-4 mt-2 opacity-85" x-data="{ open: false }">
-    <!-- Кнопка -->
-        <button @click="open = !open"
-              class="inline-flex justify-center w-full px-3 py-2 bg-gradient-to-b from-sky-500 text-white rounded-md hover:bg-sky-400 h-8">
-      Языки ▼
-        </button>
+def get_coordinates(city):
+    """Автоматическое определение широты/долготы по названию города через Nominatim API"""
+    encoded_city = urllib.parse.quote(city)
+    url = f"https://nominatim.openstreetmap.org/search?q={encoded_city}&format=json&limit=1"
+    headers = {
+        'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+        if data:
+            lat = float(data[0]['lat'])
+            lon = float(data[0]['lon'])
+            return lat, lon
+    except Exception as e:
+        pass
+    return None, None  # Fallback
 
-    <!-- Выпадающее меню -->
-        <div x-show="open"
-           @click.away="open = false"
-           class="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded shadow-lg z-50 rounded-4xl">
-          <a href="#" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition duration-200">Русский</a>
-          <a href="#" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition duration-200">English</a>
-          <a href="#" class="block px-4 py-2 text-gray-700 hover:bg-gray-100 transition duration-200">Қазақша</a>
-        </div>
-    </div>
-      </div>
-      <div class="grid-rows-1 justify-evenly flex place" x-data="{ showCityInput: false }">
-        <button @click="showCityInput = !showCityInput" class=" mx-20 my-5 w-full rounded-3xl bg-amber-50 h-10 text-center font-bold text-blue-600 transition hover:bg-sky-100 drop-shadow-2xl ease-in-out hover:scale-110">Location: {{ city }}</button>
-        <div x-show="showCityInput" @click.away="showCityInput = false" class="absolute top-32 left-1/2 transform -translate-x-1/2 bg-white p-4 rounded-lg shadow-xl z-50">
-          <form method="POST" action="/update_location">
-            <input type="text" name="city" placeholder="Enter city name" class="border border-gray-300 rounded px-3 py-2 mr-2" required>
-            <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Search</button>
-          </form>
-        </div>
-      </div>
-      <div class="flex w-full grid-rows-2 font-semibold pb-5 content-center place-content-center gap-20" x-data="{ showDateInput: false }">
-        <button @click="showDateInput = !showDateInput" class="w-40 h-10 rounded-full font-semibold bg-amber-50 text-blue-500 transition hover:bg-amber-200 drop-shadow-2xl ease-in-out hover:scale-110">Date: {{ current_date }}</button>
-        <div x-show="showDateInput" @click.away="showDateInput = false" class="absolute top-40 left-1/2 transform -translate-x-1/2 bg-white p-4 rounded-lg shadow-xl z-50">
-          <form method="POST" action="/update_date">
-            <input type="date" name="date" class="border border-gray-300 rounded px-3 py-2 mr-2" required>
-            <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Update</button>
-          </form>
-        </div>
-        <button id="live-time" class="w-40 h-10 rounded-full bg-amber-50 text-blue-600 transition hover:bg-amber-200 drop-shadow-2xl ease-in-out hover:scale-110">Time: {{ current_time }}</button>
-      </div>
-      <div class="" alt="icon"></div>
-      <div class="flex gap-5 mx-40 content-center auto-rows-auto items-center justify-evenly">
-        <div class="text-5xl flex-grow text-yellow-50 text-right">{{ forecast_data[0][0][0] }}°C</div>
-        <div class="flex-grow text-amber-50 transition">Scorching hot!🥵<br><p class="text-2xl">Current weather</p></div>
-      </div>
-      <div class=" bg-color-50 bg-gradient-to-b from-yellow-50 to-transparent auto-cols-auto m-10 rounded-3xl p-4 px-8 flex-grow border border-amber-50 hover:bg-gradient-to-b hover:from-sky-100 hover:to-transparent transition duration-300">
-        <div class="text-center mb-2 font-bold text-xl text-orange-300">Weather details</div>
-        <div class="flex gap-2 items-stretch">
-          <div class="flex-1 bg-gradient-to-b from-amber-50 via-amber-50 to-transparent rounded-3xl p-4 text-lg text-blue-500 font-bold border border-amber-50"><p>Min Temp<br>{{ forecast_data[0][0][1] }}°C</p></div>
-          <div class="flex-1 bg-gradient-to-b from-amber-50 via-amber-50 to-transparent rounded-3xl p-4 text-lg text-blue-500 font-bold border border-amber-50"><p>Max Temp<br>{{ forecast_data[0][0][2] }}°C</p></div>
-          <div class="flex-1 bg-gradient-to-b from-amber-50 via-amber-50 to-transparent rounded-3xl p-4 text-lg text-blue-500 font-bold border border-amber-50"><p>Humidity<br>{{ forecast_data[0][0][3] }}%</p></div>
-          <div class="flex-1 bg-gradient-to-b from-amber-50 via-amber-50 to-transparent rounded-3xl p-4 text-lg text-blue-500 font-bold border border-amber-50"><p>Wind Speed<br>{{ forecast_data[0][0][4] }} k/h</p></div>
-          <div class="flex-1 bg-gradient-to-b from-amber-50 via-amber-50 to-transparent rounded-3xl p-4 text-lg text-blue-500 font-bold border border-amber-50"><p>Precipitation<br>{{ forecast_data[0][0][5] }} mm</p></div>
-        </div>
-        <div class="flex flex-grow flex-wrap auto-rows-auto gap-5 mt-5 place-content-center justify-center">
-            <div class="flex-grow bg-gradient-to-b from-amber-50 via-amber-50 to-transparent h-full w-10 rounded-3xl p-4 text-lg text-orange-300 font-bold text-center border border-amber-50"><p>Sunrise<br>
-              {{ forecast_data[0][0][6] }}</p></div>
-            <div class="flex-grow bg-gradient-to-b from-amber-50 via-amber-50 to-transparent h-full w-10 rounded-3xl p-4 text-lg text-orange-300 font-bold text-center border border-amber-50">
-              <p>Sunset<br>
-                {{ forecast_data[0][0][7] }}</p>
-            </div>
-        </div>
-      </div>
 
-      <!-- Temperature Prediction Charts -->
-      <div class="m-10 space-y-6">
-        <div class="bg-gradient-to-b from-white to-transparent rounded-3xl p-6 border border-amber-50">
-          <h3 class="text-center font-bold text-xl text-blue-600 mb-4">Average Temperature - 7 Day Forecast</h3>
-          <canvas id="avgTempChart"></canvas>
-        </div>
-        
-        <div class="bg-gradient-to-b from-white to-transparent rounded-3xl p-6 border border-amber-50">
-          <h3 class="text-center font-bold text-xl text-blue-600 mb-4">Minimum Temperature - 7 Day Forecast</h3>
-          <canvas id="minTempChart"></canvas>
-        </div>
-        
-        <div class="bg-gradient-to-b from-white to-transparent rounded-3xl p-6 border border-amber-50">
-          <h3 class="text-center font-bold text-xl text-blue-600 mb-4">Maximum Temperature - 7 Day Forecast</h3>
-          <canvas id="maxTempChart"></canvas>
-        </div>
-      </div>
-    </div>
+def get_user_location_by_ip():
+    """Автоматическое определение местоположения по IP (публичный IP + гео)"""
+    try:
+        # Получить публичный IP пользователя
+        ip_response = requests.get('https://api.ipify.org?format=json')
+        ip_data = ip_response.json()
+        user_ip = ip_data['ip']
 
-    <script>
-      // Real-time clock update
-      function updateClock() {
-        const now = new Date();
-        const hours = String(now.getHours()).padStart(2, '0');
-        const minutes = String(now.getMinutes()).padStart(2, '0');
-        document.getElementById('live-time').textContent = ` ${hours}:${minutes}`;
-      }
-      
-      // Update clock every second
-      setInterval(updateClock, 1000);
-      updateClock(); // Initial call
+        # Получить гео по IP (ipapi.co — бесплатно, lat/lon/city/country)
+        geo_response = requests.get(f'https://ipapi.co/{user_ip}/json/')
+        geo_data = geo_response.json()
 
-      // Chart data from backend
-      const labels = {{ chart_labels|safe }};
-      const avgTemps = {{ avg_temps|safe }};
-      const minTemps = {{ min_temps|safe }};
-      const maxTemps = {{ max_temps|safe }};
+        city = geo_data.get('city', None)
+        if city == 'Unknown' or not city:
+            city = "Uralsk"  # Fallback для Казахстана (по IP 93.157.178.87 — Tele2 Kazakhstan)
+        lat = geo_data.get('latitude')
+        lon = geo_data.get('longitude')
 
-      // Common chart options
-      const chartOptions = {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: {
-          legend: {
-            display: false
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: false,
-            ticks: {
-              callback: function(value) {
-                return value + '°C';
-              }
-            }
-          }
-        }
-      };
+        if lat and lon:
+            return float(lat), float(lon), city  # Успех
+        else:
+            # Fallback: Nominatim по городу
+            lat, lon = get_coordinates(city)
+            return lat, lon, city
+    except Exception as e:
+        lat, lon = get_coordinates("Uralsk")
+        return lat, lon, "Uralsk"
 
-      // Average Temperature Chart
-      new Chart(document.getElementById('avgTempChart'), {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Avg Temperature',
-            data: avgTemps,
-            borderColor: 'rgb(59, 130, 246)',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            tension: 0.4,
-            fill: true
-          }]
-        },
-        options: chartOptions
-      });
 
-      // Minimum Temperature Chart
-      new Chart(document.getElementById('minTempChart'), {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Min Temperature',
-            data: minTemps,
-            borderColor: 'rgb(34, 197, 94)',
-            backgroundColor: 'rgba(34, 197, 94, 0.1)',
-            tension: 0.4,
-            fill: true
-          }]
-        },
-        options: chartOptions
-      });
+def get_sunrise_sunset(lat, lon, date_str):
+    """Получение времени восхода/захода солнца для даты через Sunrise-Sunset API (UTC+5 для Uralsk)"""
+    url = f"https://api.sunrise-sunset.org/json?lat={lat}&lng={lon}&date={date_str}&formatted=0"
+    try:
+        with urllib.request.urlopen(url) as response:
+            data = json.loads(response.read().decode())
+        if data['status'] == 'OK':
+            # Извлечение времени из ISO строки (после T, до +)
+            sunrise_utc = data['results']['sunrise'].split('T')[1].split(
+                '+')[0][:5]  # HH:MM
+            sunset_utc = data['results']['sunset'].split('T')[1].split(
+                '+')[0][:5]  # HH:MM
 
-      // Maximum Temperature Chart
-      new Chart(document.getElementById('maxTempChart'), {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Max Temperature',
-            data: maxTemps,
-            borderColor: 'rgb(239, 68, 68)',
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
-            tension: 0.4,
-            fill: true
-          }]
-        },
-        options: chartOptions
-      });
-    </script>
-  </body>
-</html>
+            # Корректировка на UTC+5 (Uralsk timezone; для других — подкорректируй)
+            sunrise_h, sunrise_m = map(int, sunrise_utc.split(':'))
+            sunset_h, sunset_m = map(int, sunset_utc.split(':'))
+
+            # Добавление 5 часов (модуль 24)
+            sunrise_local_h = (sunrise_h + 5) % 24
+            sunset_local_h = (sunset_h + 5) % 24
+
+            sunrise = f"{sunrise_local_h:02d}:{sunrise_m:02d}"
+            sunset = f"{sunset_local_h:02d}:{sunset_m:02d}"
+
+            return sunrise, sunset
+    except Exception as e:
+        pass
+    return None, None
+
+
+def fetch_nasa_data(latitude, longitude, start, end, parameters, community):
+    """Запрос данных за один период из NASA API"""
+    url = f"https://power.larc.nasa.gov/api/temporal/daily/point?parameters={parameters}&community={community}&longitude={longitude}&latitude={latitude}&start={start}&end={end}&format=JSON"
+    try:
+        with urllib.request.urlopen(url) as response:
+            data = json.loads(response.read().decode())
+        properties = data['properties']['parameter']
+        param_keys = list(properties.keys())
+        dates = list(properties[param_keys[0]].keys())
+        df_data = {}
+        for param in param_keys:
+            df_data[param] = [properties[param][date] for date in dates]
+        df = pd.DataFrame({'date': pd.to_datetime(dates), **df_data})
+        return df
+    except urllib.error.HTTPError as e:
+        if e.code == 422:
+            error_body = e.read().decode()
+            pass
+        return pd.DataFrame()
+    except Exception as e:
+        return pd.DataFrame()
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
