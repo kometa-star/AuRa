@@ -16,8 +16,8 @@
         <div class="relative inline-block text-left mr-4 mt-2 opacity-85" x-data="{ open: false }">
     <!-- Кнопка -->
         <button @click="open = !open"
-              class="inline-flex justify-center w-full px-3 py-2 bg-gradient-to-b from-sky-500 text-white rounded-md hover:bg-sky-400 h-8">
-      Языки ▼
+              class="inline-flex justify-center w-full px-3 py-2 bg-gradient-to-b from-sky-500 text-white rounded-md hover:bg-sky-400 h-8 flex-grow">
+      Languages ▼
         </button>
 
     <!-- Выпадающее меню -->
@@ -58,7 +58,7 @@
         <div class="text-center mb-2 font-bold text-xl text-orange-300">Weather details</div>
         <div class="flex gap-2 items-stretch flex-wrap">
           <div class="flex-1 text-wrap bg-gradient-to-b from-amber-50 via-amber-50 to-transparent rounded-3xl p-4 text-lg text-blue-500 font-bold border border-amber-50"><p>Feels like<br>{{ feelslike }}°C</p></div>
-          <div class="flex-1 text-wrap bg-gradient-to-b from-amber-50 via-amber-50 to-transparent rounded-3xl p-4 text-lg text-blue-500 font-bold border border-amber-50"><p>Humidity<br>{{ humidity] }}%</p></div>
+          <div class="flex-1 text-wrap bg-gradient-to-b from-amber-50 via-amber-50 to-transparent rounded-3xl p-4 text-lg text-blue-500 font-bold border border-amber-50"><p>Humidity<br>{{ humidity }}%</p></div>
           <div class="flex-1 text-wrap bg-gradient-to-b from-amber-50 via-amber-50 to-transparent rounded-3xl p-4 text-lg text-blue-500 font-bold border border-amber-50"><p>Wind Speed<br>{{ wind_speed }} k/h</p></div>
           <div class="flex-1 text-wrap bg-gradient-to-b from-amber-50 via-amber-50 to-transparent rounded-3xl p-4 text-lg text-blue-500 font-bold border border-amber-50"><p>Precipitation<br>{{ precip }} mm</p></div>
         </div>
