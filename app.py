@@ -252,5 +252,11 @@ def fetch_nasa_data(latitude, longitude, start, end, parameters, community):
     except Exception as e:
         return pd.DataFrame()
 
+
+app = Flask(__name__)
+
+def home():
+    return render_template("index.html", name="Jinja + Tailwind")
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
