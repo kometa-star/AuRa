@@ -6,7 +6,8 @@ services:
       npm install
       npm run build
       pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: startCommand: gunicorn app:app --bind 0.0.0.0:10000
+
     buildFilter:
       paths:
         - "templates/**"
