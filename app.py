@@ -159,6 +159,17 @@ def update_date():
         session['custom_date'] = date_str
     return redirect(url_for('home'))
 
+@app.route("/download")
+def download_file():
+    content = f"Это сгенерировано Python\nВремя: {datetime.datetime.now()}\n"
+    filename = "data.txt"
+
+    return Response(
+        content,
+        mimetype="text/plain",
+        headers={"Content-Disposition": f"attachment;filename={filename}"}
+    )
+
 
 def get_coordinates(city):
     """Автоматическое определение широты/долготы по названию города через Nominatim API"""
